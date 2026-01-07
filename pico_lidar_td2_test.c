@@ -6,18 +6,13 @@
 #include "as5600.h"
 #include "vl53l1x.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-
 #include "pico/cyw43_arch.h"
 
 #define I2C_PORT i2c0
 #define I2C_SDA 16
 #define I2C_SCL 17
 
-#define GPIO_MOT 0
+#define PWM_GPIO 0
 #define PWM_WRAP 4096
 #define PWM_MIN 2400
 #define PWM_FREQ_KHZ 8.0f
@@ -30,13 +25,15 @@ void init_pwm(uint gpio, float frequency_khz, uint16_t wrap) {
     uint32_t freq_khz = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS);
     pwm_set_clkdiv(slice_num, (float) freq_khz /  (frequency_khz * (float) wrap));
     pwm_set_wrap(slice_num, wrap);
-    pwm_set_gpio_level(gpio, 0);
+    pwm_set_gpio_level(PWM_GPIO, 0);
     pwm_set_enabled(slice_num, true);
 }
 
 int main()
 {
     stdio_init_all();
+    uint16_t distance;
+    VL53L1X_ERROR vl53l1x_status;
     if (cyw43_arch_init()) {
         printf("Wi-Fi init failed");
         return -1;
@@ -48,63 +45,63 @@ int main()
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
 
-    init_pwm(GPIO_MOT, PWM_FREQ_KHZ, PWM_WRAP);
-
-    xTaskCreate(task_as5600, "AS5600 Task", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL);
-    xTaskCreate(task_laser, "VL53L1X Task", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL);
-
-    while (true);
-}
-
-void task_as5600(void * pvParameters) {
-    as5600_status_t status;
-    uint16_t angle;
-    while(1) {
-        status = get_as5600_status(I2C_PORT);
-        printf("AS5600 Status - MH: %d, ML: %d, MD: %d, Valid: %d\n", status.mh, status.ml, status.md, status.valid);
-        angle = get_as5600_angle(I2C_PORT);
-        printf("AS5600 Angle: %d\n", angle);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
-}
-
-void task_laser(void * pvParameters) {
-    uint16_t distance;
-    VL53L1X_ERROR vl53l1x_status;
-
     vl53l1x_status = VL53L1X_SensorInit(VL53L1X_ADDRESS);
     if (vl53l1x_status != VL53L1_ERROR_NONE) {
         printf("VL53L1X Sensor Init failed with error: %d\n", vl53l1x_status);
         cyw43_arch_gpio_put(GPIO_LED, 1);
-        vTaskDelete(NULL);
-    }
-    vl53l1x_status = VL53L1X_SetDistanceMode(VL53L1X_ADDRESS, short_distance); // Long mode
-    if (vl53l1x_status != VL53L1_ERROR_NONE) {
-        printf("VL53L1X Set Distance Mode failed with error: %d\n", vl53l1x_status);
-        cyw43_arch_gpio_put(GPIO_LED, 1);
-        vTaskDelete(NULL);
+        while (1) {
+            printf("Retrying VL53L1X Sensor Init...\n");
+            sleep_ms(100);
+        }
+    } else {
+        for (int i = 0; i < 3; i++) {
+            cyw43_arch_gpio_put(GPIO_LED, 1);
+            sleep_ms(100);
+            cyw43_arch_gpio_put(GPIO_LED, 0);
+            sleep_ms(100);
+        }
+        printf("VL53L1X Sensor Init successful\n");
     }
     vl53l1x_status = VL53L1X_StartRanging(VL53L1X_ADDRESS);
     if (vl53l1x_status != VL53L1_ERROR_NONE) {
         printf("VL53L1X Sensor Start failed with error: %d\n", vl53l1x_status);
         cyw43_arch_gpio_put(GPIO_LED, 1);
-        vTaskDelete(NULL);
+        while (1) {
+            printf("Retrying VL53L1X Sensor Start...\n");
+            sleep_ms(100);
+        }
+    } else {
+        for (int i = 0; i < 3; i++) {
+            cyw43_arch_gpio_put(GPIO_LED, 1);
+            sleep_ms(100);
+            cyw43_arch_gpio_put(GPIO_LED, 0);
+            sleep_ms(100);
+        }
+        printf("VL53L1X Sensor Start successful\n");
     }
+    VL53L1X_SetDistanceMode(VL53L1X_ADDRESS, short_distance); // Long mode
 
-    for (int i = 0; i < 3; i++) {
-        cyw43_arch_gpio_put(GPIO_LED, 1);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-        cyw43_arch_gpio_put(GPIO_LED, 0);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
+    init_pwm(PWM_GPIO, PWM_FREQ_KHZ, PWM_WRAP);
 
-    while(1) {
+
+    while (true) {
+
+        as5600_status_t status = get_as5600_status(I2C_PORT);
+        printf("AS5600 Status - MH: %d, ML: %d, MD: %d, Valid: %d\n", status.mh, status.ml, status.md, status.valid);
+        uint16_t angle = get_as5600_angle(I2C_PORT);
+
+        printf("AS5600 Angle: %d\n", angle);
         vl53l1x_status = VL53L1X_GetDistance(VL53L1X_ADDRESS, &distance);
         if (vl53l1x_status != VL53L1_ERROR_NONE) {
             printf("VL53L1X Get Distance failed with error: %d\n", vl53l1x_status);
             distance = 0;
         }
         printf("VL53L1X Distance: %d\n", distance);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // cyw43_arch_gpio_put(GPIO_LED, 1);
+        // pwm_set_gpio_level(PWM_GPIO, PWM_MIN + 256);
+        // sleep_ms(500);
+        pwm_set_gpio_level(PWM_GPIO, 0);
+        // cyw43_arch_gpio_put(GPIO_LED, 0);
+        sleep_ms(500);
     }
 }
