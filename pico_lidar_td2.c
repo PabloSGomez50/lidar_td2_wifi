@@ -1,46 +1,44 @@
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include "hardware/i2c.h"
-#include "hardware/pwm.h"
-#include "hardware/clocks.h"
+#include "pico_lidar_td2.h"
 #include "as5600.h"
 #include "vl53l1x.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
 
-#include "pico/cyw43_arch.h"
+#define WIFI_SSID "Telecentro-996b"
+#define WIFI_PASSWORD "ZNYUW3MDZDTM"
 
-#define I2C_PORT i2c0
-#define I2C_SDA 16
-#define I2C_SCL 17
-
-#define GPIO_MOT 0
-#define PWM_WRAP 4096
-#define PWM_MIN 2400
-#define PWM_FREQ_KHZ 8.0f
-
-#define GPIO_LED CYW43_WL_GPIO_LED_PIN
-
-void init_pwm(uint gpio, float frequency_khz, uint16_t wrap) {
-    gpio_set_function(gpio, GPIO_FUNC_PWM);
-    uint slice_num = pwm_gpio_to_slice_num(gpio);
-    uint32_t freq_khz = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_SYS);
-    pwm_set_clkdiv(slice_num, (float) freq_khz /  (frequency_khz * (float) wrap));
-    pwm_set_wrap(slice_num, wrap);
-    pwm_set_gpio_level(gpio, 0);
-    pwm_set_enabled(slice_num, true);
-}
+// void connect_to_wifi(char * wifi_ssid, char * wifi_password) {
+//     DEBUG_printf("Connecting to Wi-Fi...\n");
+//     cyw43_arch_enable_sta_mode();
+//     uint8_t attempt = 0;
+//     int error_code; 
+//     while ((error_code = cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_password, CYW43_AUTH_WPA2_AES_PSK, 3000)) != 0) {
+//         attempt++;
+//         DEBUG_printf("Attempt %d: Failed. Error code: %d\n", attempt, error_code);
+//         if (attempt >= 5) {
+//             DEBUG_printf("giving up.\n");
+//             return;
+//         }
+//         sleep_ms(500);
+//     }
+//     DEBUG_printf("Connected to %s.\n", wifi_ssid);
+// }
 
 int main()
 {
     stdio_init_all();
+    
     if (cyw43_arch_init()) {
-        printf("Wi-Fi init failed");
+        DEBUG_printf("Wi-Fi init failed");
         return -1;
     }
+    DEBUG_printf("Loading...");
+    cyw43_arch_gpio_put(GPIO_LED, 1);
+    sleep_ms(1500);
+
+    // connect_to_wifi(WIFI_SSID, WIFI_PASSWORD);
+    DEBUG_printf("Pico LIDAR TD2 Starting\n");
+    cyw43_arch_gpio_put(GPIO_LED, 0);
+    
     // I2C Initialisation. Using it at 400Khz.
     i2c_init(I2C_PORT, 400*1000);
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
@@ -50,10 +48,12 @@ int main()
 
     init_pwm(GPIO_MOT, PWM_FREQ_KHZ, PWM_WRAP);
 
-    xTaskCreate(task_as5600, "AS5600 Task", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL);
-    xTaskCreate(task_laser, "VL53L1X Task", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL);
-
-    while (true);
+    xTaskCreate(task_as5600, "AS5600 Task", configMINIMAL_STACK_SIZE * 3, NULL, 1, NULL);
+    xTaskCreate(task_laser, "VL53L1X Task", configMINIMAL_STACK_SIZE * 3, NULL, 1, NULL);
+    vTaskStartScheduler();
+    while (true) {
+        tight_loop_contents();
+    }
 }
 
 void task_as5600(void * pvParameters) {
@@ -61,9 +61,9 @@ void task_as5600(void * pvParameters) {
     uint16_t angle;
     while(1) {
         status = get_as5600_status(I2C_PORT);
-        printf("AS5600 Status - MH: %d, ML: %d, MD: %d, Valid: %d\n", status.mh, status.ml, status.md, status.valid);
+        DEBUG_printf("AS5600 Status - MH: %d, ML: %d, MD: %d, Valid: %d\n", status.mh, status.ml, status.md, status.valid);
         angle = get_as5600_angle(I2C_PORT);
-        printf("AS5600 Angle: %d\n", angle);
+        DEBUG_printf("AS5600 Angle: %d\n", angle);
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
@@ -74,19 +74,19 @@ void task_laser(void * pvParameters) {
 
     vl53l1x_status = VL53L1X_SensorInit(VL53L1X_ADDRESS);
     if (vl53l1x_status != VL53L1_ERROR_NONE) {
-        printf("VL53L1X Sensor Init failed with error: %d\n", vl53l1x_status);
+        DEBUG_printf("VL53L1X Sensor Init failed with error: %d\n", vl53l1x_status);
         cyw43_arch_gpio_put(GPIO_LED, 1);
         vTaskDelete(NULL);
     }
     vl53l1x_status = VL53L1X_SetDistanceMode(VL53L1X_ADDRESS, short_distance); // Long mode
     if (vl53l1x_status != VL53L1_ERROR_NONE) {
-        printf("VL53L1X Set Distance Mode failed with error: %d\n", vl53l1x_status);
+        DEBUG_printf("VL53L1X Set Distance Mode failed with error: %d\n", vl53l1x_status);
         cyw43_arch_gpio_put(GPIO_LED, 1);
         vTaskDelete(NULL);
     }
     vl53l1x_status = VL53L1X_StartRanging(VL53L1X_ADDRESS);
     if (vl53l1x_status != VL53L1_ERROR_NONE) {
-        printf("VL53L1X Sensor Start failed with error: %d\n", vl53l1x_status);
+        DEBUG_printf("VL53L1X Sensor Start failed with error: %d\n", vl53l1x_status);
         cyw43_arch_gpio_put(GPIO_LED, 1);
         vTaskDelete(NULL);
     }
@@ -101,10 +101,10 @@ void task_laser(void * pvParameters) {
     while(1) {
         vl53l1x_status = VL53L1X_GetDistance(VL53L1X_ADDRESS, &distance);
         if (vl53l1x_status != VL53L1_ERROR_NONE) {
-            printf("VL53L1X Get Distance failed with error: %d\n", vl53l1x_status);
+            DEBUG_printf("VL53L1X Get Distance failed with error: %d\n", vl53l1x_status);
             distance = 0;
         }
-        printf("VL53L1X Distance: %d\n", distance);
+        DEBUG_printf("VL53L1X Distance: %d\n", distance);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }

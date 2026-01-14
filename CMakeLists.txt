@@ -35,7 +35,11 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(pico_lidar_td2 pico_lidar_td2.c )
+add_executable(pico_lidar_td2
+    pico_lidar_td2.c
+    mongoose.c
+)
+
 
 pico_set_program_name(pico_lidar_td2 "pico_lidar_td2")
 pico_set_program_version(pico_lidar_td2 "0.1")
@@ -51,7 +55,10 @@ add_subdirectory(freertos)
 # Add the standard library to the build
 target_link_libraries(pico_lidar_td2
         pico_stdlib
+        pico_rand
+        pico_cyw43_driver
         pico_cyw43_arch_none
+        # pico_cyw43_arch_lwip_threadsafe_background
         )
 
 # Add the standard include files to the build
@@ -71,3 +78,5 @@ target_link_libraries(pico_lidar_td2
 
 pico_add_extra_outputs(pico_lidar_td2)
 
+
+add_definitions(-DMG_ENABLE_TCPIP_DRIVER_INIT=0)
