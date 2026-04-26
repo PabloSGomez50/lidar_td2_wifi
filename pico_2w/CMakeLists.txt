@@ -37,7 +37,6 @@ pico_sdk_init()
 
 add_executable(pico_lidar_td2
     pico_lidar_td2.c
-    mongoose.c
 )
 
 
@@ -55,11 +54,8 @@ add_subdirectory(freertos)
 # Add the standard library to the build
 target_link_libraries(pico_lidar_td2
         pico_stdlib
-        pico_rand
-        pico_cyw43_driver
-        pico_cyw43_arch_none
-        # pico_cyw43_arch_lwip_threadsafe_background
-        )
+        pico_cyw43_arch_lwip_threadsafe_background
+    )
 
 # Add the standard include files to the build
 target_include_directories(pico_lidar_td2 PRIVATE

@@ -12,13 +12,10 @@
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
 
-#include "mongoose.h"
-
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
-
 
 #define DEBUG_printf printf
 #define I2C_PORT i2c0

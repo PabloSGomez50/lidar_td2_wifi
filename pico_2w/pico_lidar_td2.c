@@ -6,22 +6,22 @@
 #define WIFI_SSID "Telecentro-996b"
 #define WIFI_PASSWORD "ZNYUW3MDZDTM"
 
-// void connect_to_wifi(char * wifi_ssid, char * wifi_password) {
-//     DEBUG_printf("Connecting to Wi-Fi...\n");
-//     cyw43_arch_enable_sta_mode();
-//     uint8_t attempt = 0;
-//     int error_code; 
-//     while ((error_code = cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_password, CYW43_AUTH_WPA2_AES_PSK, 3000)) != 0) {
-//         attempt++;
-//         DEBUG_printf("Attempt %d: Failed. Error code: %d\n", attempt, error_code);
-//         if (attempt >= 5) {
-//             DEBUG_printf("giving up.\n");
-//             return;
-//         }
-//         sleep_ms(500);
-//     }
-//     DEBUG_printf("Connected to %s.\n", wifi_ssid);
-// }
+void connect_to_wifi(char * wifi_ssid, char * wifi_password) {
+    DEBUG_printf("Connecting to Wi-Fi...\n");
+    cyw43_arch_enable_sta_mode();
+    uint8_t attempt = 0;
+    int error_code; 
+    while ((error_code = cyw43_arch_wifi_connect_timeout_ms(wifi_ssid, wifi_password, CYW43_AUTH_WPA2_AES_PSK, 3000)) != 0) {
+        attempt++;
+        DEBUG_printf("Attempt %d: Failed. Error code: %d\n", attempt, error_code);
+        if (attempt >= 5) {
+            DEBUG_printf("giving up.\n");
+            return;
+        }
+        sleep_ms(500);
+    }
+    DEBUG_printf("Connected to %s.\n", wifi_ssid);
+}
 
 int main()
 {
@@ -35,7 +35,7 @@ int main()
     cyw43_arch_gpio_put(GPIO_LED, 1);
     sleep_ms(1500);
 
-    // connect_to_wifi(WIFI_SSID, WIFI_PASSWORD);
+    connect_to_wifi(WIFI_SSID, WIFI_PASSWORD);
     DEBUG_printf("Pico LIDAR TD2 Starting\n");
     cyw43_arch_gpio_put(GPIO_LED, 0);
     
