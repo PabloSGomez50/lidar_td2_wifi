@@ -44,7 +44,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 }
 
 void connect_to_wifi(void) {
-    ESP_LOGI(TAG, "Connecting to WiFi, %s...", WIFI_SSID);
+    ESP_LOGI(TAG, "Connecting to WiFi, %s...", CONFIG_WIFI_SSID);
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -82,8 +82,8 @@ void connect_to_wifi(void) {
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASSWORD
+            .ssid = CONFIG_WIFI_SSID,
+            .password = CONFIG_WIFI_PASSWORD
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
@@ -103,9 +103,9 @@ void connect_to_wifi(void) {
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s", WIFI_SSID);
+        ESP_LOGI(TAG, "connected to ap SSID:%s", CONFIG_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s", WIFI_SSID);
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s", CONFIG_WIFI_SSID);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }

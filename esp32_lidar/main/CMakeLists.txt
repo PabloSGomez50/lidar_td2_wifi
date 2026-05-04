@@ -2,7 +2,7 @@ idf_component_register(
     SRCS
         "main.c"
         "Wireless/Wireless.c"
-        "vl53l1x.c"
+       
     PRIV_REQUIRES
         esp_http_server
         esp_driver_gpio
@@ -12,6 +12,7 @@ idf_component_register(
         json
         nvs_flash
         vl53l1x
+        as5600
     INCLUDE_DIRS
         "." 
         "./Wireless"

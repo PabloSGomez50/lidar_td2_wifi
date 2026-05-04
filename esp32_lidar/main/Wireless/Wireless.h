@@ -10,8 +10,4 @@
 #include <string.h>  // For memcpy
 #include "esp_system.h"
 
-
-#define WIFI_SSID "Telecentro-996b"
-#define WIFI_PASSWORD ""
-
 void connect_to_wifi(void);

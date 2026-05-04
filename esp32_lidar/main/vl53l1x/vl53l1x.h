@@ -26,4 +26,3 @@ typedef struct {
 
 void init_vl53l1x(uint16_t dev, uint16_t modo);
 laser_data_t get_data_laser(uint16_t dev);
-// uint8_t send_laser_uart(laser_data_t data, USART_Type *port, uint16_t mot_angle);

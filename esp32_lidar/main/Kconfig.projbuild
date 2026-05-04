@@ -67,4 +67,16 @@ menu "Example Configuration"
         help
             I2C clock frequency in Hz.
 
+    config WIFI_SSID
+        string "Wi-Fi SSID"
+        default "Telecentro-996b"
+        help
+            Specify the SSID of Wi-Fi network to connect to.
+
+    config WIFI_PASSWORD
+        string "Wi-Fi Password"
+        default "Telecentro-996b"
+        help
+            Specify the password of Wi-Fi network to connect to.
+
 endmenu

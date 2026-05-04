@@ -19,6 +19,7 @@
 #include "freertos/queue.h"
 #include "Wireless/Wireless.h"
 #include "vl53l1x.h"
+#include "as5600.h"
 
 #define I2C_MASTER_SCL_IO           CONFIG_I2C_MASTER_SCL       /*!< GPIO number used for I2C master clock */
 #define I2C_MASTER_SDA_IO           CONFIG_I2C_MASTER_SDA       /*!< GPIO number used for I2C master data  */
@@ -49,6 +50,17 @@ static esp_err_t init_i2c_master(void)
 }
 
 
+void get_sensor_data() {
+    laser_data_t laser_data = get_data_laser(VL53L1X_ADDRESS);
+    ESP_LOGI(TAG, "Distance: %u mm, Signal Rate: %u Mcps, Ambient Light: %u Mcps, SPADs: %u",
+             laser_data.distance, laser_data.signal_rate, laser_data.ambient_light, laser_data.spad_num);
+    as5600_status_t as5600_status = get_as5600_status();
+    uint16_t angle = get_as5600_angle();
+    uint8_t agc = get_as5600_agc();
+    ESP_LOGI(TAG, "AS5600 - Angle: %u, AGC: %u, Status: [%c]",
+             angle, agc, as5600_status.valid ? 'X' : '-');
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting up...");
@@ -59,7 +71,6 @@ void app_main(void)
         return;
     }
 
-    uint16_t dev = VL53L1X_ADDRESS;
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = (VL53L1X_ADDRESS >> 1),
@@ -68,24 +79,28 @@ void app_main(void)
     
     i2c_master_dev_handle_t dev_handle;
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
-
     vl53l1x_set_i2c_device(dev_handle);
     
-    init_vl53l1x(dev, short_distance);
+    init_vl53l1x(VL53L1X_ADDRESS, short_distance);
     vTaskDelay(200 / portTICK_PERIOD_MS);
+
+    i2c_device_config_t as5600_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = AS5600_ADDRESS,
+        .scl_speed_hz = 100000,
+    };
     
+    i2c_master_dev_handle_t as5600_handle;
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &as5600_cfg, &as5600_handle));
+    as5600_set_i2c_device(as5600_handle);
+
     ESP_LOGW(TAG, "WiFi connection initiated, waiting for connection...");
     connect_to_wifi();
-
-    laser_data_t laser_data = get_data_laser(dev);
-    ESP_LOGI(TAG, "Distance: %u mm, Signal Rate: %u Mcps, Ambient Light: %u Mcps, SPADs: %u",
-             laser_data.distance, laser_data.signal_rate, laser_data.ambient_light, laser_data.spad_num);
              
     while(1) {
         ESP_LOGI(TAG, "Dando vueltas en el loop...");
-        laser_data = get_data_laser(dev);
-        ESP_LOGI(TAG, "Distance: %u mm, Signal Rate: %u Mcps, Ambient Light: %u Mcps, SPADs: %u",
-                laser_data.distance, laser_data.signal_rate, laser_data.ambient_light, laser_data.spad_num);
+
+        get_sensor_data();
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

@@ -53,22 +53,3 @@ laser_data_t get_data_laser(uint16_t dev) {
     
     return data;
 }
-
-// uint8_t send_laser_uart(laser_data_t data, USART_Type *usart_port, uint16_t mot_angle) {
-//     char msg_usart[128] = "";
-//     if (data.ready != 0){
-//         sprintf(msg_usart, "$%u, %u, %u, %u, %u, %u, %u\n",
-//          data.range,
-//          data.distance,
-//          data.signal_rate,
-//          data.ambient_light,
-//          data.spad_num,
-//          mot_angle % 3600,
-//          mot_angle / 3600
-//         );
-//         USART_WriteBlocking(usart_port, msg_usart, strlen(msg_usart));
-//     } else {
-//         sprintf(msg_usart, "Data not ready %i\n", data.ready);
-//         USART_WriteBlocking(usart_port, msg_usart, strlen(msg_usart));
-//     }
-// }
