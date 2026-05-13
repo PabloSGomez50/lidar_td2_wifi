@@ -8,22 +8,16 @@ void init_vl53l1x(uint16_t dev, uint16_t mode) {
     uint8_t data[1];
     // Test de valores en lectura
     status = VL53L1_RdByte(dev, 0x010F, data);
-    ESP_LOGI(TAG, "VL53L1X (status %d) Model_ID: %X\n", status, data[0]);
+    ESP_LOGI(TAG, "VL53L1X Model_ID: %X", data[0]);
 
-    // status = VL53L1_RdByte(dev, 0x0110, &byteData);
-    // printf("VL53L1X Module_Type: %X\n", byteData);
-    
-    // status = VL53L1_RdByte(dev, 0x0111, &byteData);
-    // printf("VL53L1X Module_Type: %X\n", byteData);
-
-    // status = VL53L1_RdWord(dev, 0x010F, &wordData);
-    // printf("VL53L1X: %X\n", wordData);
-
+    status = VL53L1_RdByte(dev, 0x0110, data);
+    ESP_LOGI(TAG, "VL53L1X Module_Type: %X", data[0]);
     
     status = VL53L1X_BootState(dev, &sensorState);
     while(!sensorState){
-      status = VL53L1X_BootState(dev, &sensorState);
-      vTaskDelay(200 / portTICK_PERIOD_MS);
+        ESP_LOGW(TAG, "VL53L1X waiting for boot, status %d", status);
+        status = VL53L1X_BootState(dev, &sensorState);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
     }
 
     /* This function must to be called to initialize the sensor with the default setting  */
@@ -33,7 +27,7 @@ void init_vl53l1x(uint16_t dev, uint16_t mode) {
     status = VL53L1X_SetTimingBudgetInMs(dev, 100); /* in ms possible values [20, 50, 100, 200, 500] */
     status = VL53L1X_SetInterMeasurementInMs(dev, 100); /* in ms, IM must be > = TB */
     status = VL53L1X_StartRanging(dev);   /* This function has to be called to enable the ranging */
-
+    ESP_LOGI(TAG, "VL53L1X initialization done, status %d", status);
 }
 
 

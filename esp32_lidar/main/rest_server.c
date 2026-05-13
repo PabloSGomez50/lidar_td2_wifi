@@ -1,226 +1,277 @@
-/* HTTP Restful API Server
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
+/* HTTP REST API for lidar control and data. */
 #include <string.h>
-#include <fcntl.h>
-#include "esp_http_server.h"
-#include "esp_chip_info.h"
-#include "esp_random.h"
-#include "esp_log.h"
-#include "esp_vfs.h"
+#include <stdlib.h>
+
 #include "cJSON.h"
+#include "esp_http_server.h"
+#include "esp_log.h"
 
-static const char *REST_TAG = "esp-rest";
-#define REST_CHECK(a, str, goto_tag, ...)                                              \
-    do                                                                                 \
-    {                                                                                  \
-        if (!(a))                                                                      \
-        {                                                                              \
-            ESP_LOGE(REST_TAG, "%s(%d): " str, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
-            goto goto_tag;                                                             \
-        }                                                                              \
-    } while (0)
+#include "lidar_data.h"
 
-#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 128)
-#define SCRATCH_BUFSIZE (10240)
+static const char *REST_TAG = "lidar-rest";
 
-typedef struct rest_server_context {
-    char base_path[ESP_VFS_PATH_MAX + 1];
-    char scratch[SCRATCH_BUFSIZE];
-} rest_server_context_t;
-
-#define CHECK_FILE_EXTENSION(filename, ext) (strcasecmp(&filename[strlen(filename) - strlen(ext)], ext) == 0)
-
-/* Set HTTP response content type according to file extension */
-static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filepath)
+static cJSON *lidar_sample_to_json(const lidar_sample_t *sample)
 {
-    const char *type = "text/plain";
-    if (CHECK_FILE_EXTENSION(filepath, ".html")) {
-        type = "text/html";
-    } else if (CHECK_FILE_EXTENSION(filepath, ".js")) {
-        type = "application/javascript";
-    } else if (CHECK_FILE_EXTENSION(filepath, ".css")) {
-        type = "text/css";
-    } else if (CHECK_FILE_EXTENSION(filepath, ".png")) {
-        type = "image/png";
-    } else if (CHECK_FILE_EXTENSION(filepath, ".ico")) {
-        type = "image/x-icon";
-    } else if (CHECK_FILE_EXTENSION(filepath, ".svg")) {
-        type = "text/xml";
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return NULL;
     }
-    return httpd_resp_set_type(req, type);
+
+    cJSON_AddNumberToObject(root, "timestamp_ms", sample->timestamp_ms);
+    cJSON_AddBoolToObject(root, "as5600_valid", sample->as5600_valid);
+    cJSON_AddNumberToObject(root, "as5600_angle", sample->angle);
+    cJSON_AddNumberToObject(root, "as5600_agc", sample->agc);
+
+    cJSON *laser = cJSON_CreateObject();
+    if (laser == NULL) {
+        cJSON_Delete(root);
+        return NULL;
+    }
+    cJSON_AddNumberToObject(laser, "ready", sample->laser_data.ready);
+    cJSON_AddNumberToObject(laser, "distance", sample->laser_data.distance);
+    cJSON_AddNumberToObject(laser, "range", sample->laser_data.range);
+    cJSON_AddNumberToObject(laser, "signal_rate", sample->laser_data.signal_rate);
+    cJSON_AddNumberToObject(laser, "ambient_light", sample->laser_data.ambient_light);
+    cJSON_AddNumberToObject(laser, "spad_num", sample->laser_data.spad_num);
+    cJSON_AddItemToObject(root, "vl53l1x", laser);
+
+    return root;
 }
 
-/* Send HTTP response with the contents of the requested file */
-static esp_err_t rest_common_get_handler(httpd_req_t *req)
+static esp_err_t lidar_status_get_handler(httpd_req_t *req)
 {
-    char filepath[FILE_PATH_MAX];
+    httpd_resp_set_type(req, "application/json");
 
-    rest_server_context_t *rest_context = (rest_server_context_t *)req->user_ctx;
-    strlcpy(filepath, rest_context->base_path, sizeof(filepath));
-    if (req->uri[strlen(req->uri) - 1] == '/') {
-        strlcat(filepath, "/index.html", sizeof(filepath));
-    } else {
-        strlcat(filepath, req->uri, sizeof(filepath));
-    }
-    int fd = open(filepath, O_RDONLY, 0);
-    if (fd == -1) {
-        ESP_LOGE(REST_TAG, "Failed to open file : %s", filepath);
-        /* Respond with 500 Internal Server Error */
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read existing file");
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json alloc failed");
         return ESP_FAIL;
     }
 
-    set_content_type_from_file(req, filepath);
-
-    char *chunk = rest_context->scratch;
-    ssize_t read_bytes;
-    do {
-        /* Read file in chunks into the scratch buffer */
-        read_bytes = read(fd, chunk, SCRATCH_BUFSIZE);
-        if (read_bytes == -1) {
-            ESP_LOGE(REST_TAG, "Failed to read file : %s", filepath);
-        } else if (read_bytes > 0) {
-            /* Send the buffer contents as HTTP response chunk */
-            if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
-                close(fd);
-                ESP_LOGE(REST_TAG, "File sending failed!");
-                /* Abort sending file */
-                httpd_resp_sendstr_chunk(req, NULL);
-                /* Respond with 500 Internal Server Error */
-                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file");
-                return ESP_FAIL;
-            }
-        }
-    } while (read_bytes > 0);
-    /* Close file after sending complete */
-    close(fd);
-    ESP_LOGI(REST_TAG, "File sending complete");
-    /* Respond with an empty chunk to signal HTTP response completion */
-    httpd_resp_send_chunk(req, NULL, 0);
+    cJSON_AddBoolToObject(root, "running", lidar_data_is_running());
+    cJSON_AddNumberToObject(root, "buffer_count", (int)lidar_data_get_count());
+    
+    const char *payload = cJSON_PrintUnformatted(root);
+    httpd_resp_sendstr(req, payload);
+    free((void *)payload);
+    cJSON_Delete(root);
     return ESP_OK;
 }
 
-/* Simple handler for light brightness control */
-static esp_err_t light_brightness_post_handler(httpd_req_t *req)
+static esp_err_t lidar_start_post_handler(httpd_req_t *req)
 {
-    int total_len = req->content_len;
-    int cur_len = 0;
-    char *buf = ((rest_server_context_t *)(req->user_ctx))->scratch;
-    int received = 0;
-    if (total_len >= SCRATCH_BUFSIZE) {
-        /* Respond with 500 Internal Server Error */
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "content too long");
+    (void)req;
+
+    esp_err_t err = lidar_data_start();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "start failed");
         return ESP_FAIL;
     }
-    while (cur_len < total_len) {
-        received = httpd_req_recv(req, buf + cur_len, total_len);
-        if (received <= 0) {
-            /* Respond with 500 Internal Server Error */
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to post control value");
-            return ESP_FAIL;
-        }
-        cur_len += received;
+
+    httpd_resp_sendstr(req, "started");
+    return ESP_OK;
+}
+
+static esp_err_t lidar_stop_post_handler(httpd_req_t *req)
+{
+    (void)req;
+
+    esp_err_t err = lidar_data_stop();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "stop failed");
+        return ESP_FAIL;
     }
-    buf[total_len] = '\0';
 
-    cJSON *root = cJSON_Parse(buf);
-    int red = cJSON_GetObjectItem(root, "red")->valueint;
-    int green = cJSON_GetObjectItem(root, "green")->valueint;
-    int blue = cJSON_GetObjectItem(root, "blue")->valueint;
-    ESP_LOGI(REST_TAG, "Light control: red = %d, green = %d, blue = %d", red, green, blue);
-    cJSON_Delete(root);
-    httpd_resp_sendstr(req, "Post control value successfully");
+    httpd_resp_sendstr(req, "stopped");
     return ESP_OK;
 }
 
-/* Simple handler for getting system handler */
-static esp_err_t system_info_get_handler(httpd_req_t *req)
+static esp_err_t lidar_latest_get_handler(httpd_req_t *req)
 {
+    lidar_sample_t sample = {0};
+    if (!lidar_data_get_latest(&sample)) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no data");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    cJSON *root = lidar_sample_to_json(&sample);
+    if (root == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json alloc failed");
+        return ESP_FAIL;
+    }
+
+    const char *payload = cJSON_PrintUnformatted(root);
+    httpd_resp_sendstr(req, payload);
+    free((void *)payload);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+static esp_err_t lidar_samples_get_handler(httpd_req_t *req)
+{
+    char query[64] = {0};
+    int limit = 16;
+    int offset = 0;
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        char value[16] = {0};
+        if (httpd_query_key_value(query, "limit", value, sizeof(value)) == ESP_OK) {
+            limit = atoi(value);
+        }
+        if (httpd_query_key_value(query, "offset", value, sizeof(value)) == ESP_OK) {
+            offset = atoi(value);
+        }
+    }
+
+    if (limit <= 0) {
+        limit = 1;
+    }
+    if (limit > (int)LIDAR_SAMPLE_BUFFER_SIZE) {
+        limit = LIDAR_SAMPLE_BUFFER_SIZE;
+    }
+    if (offset < 0) {
+        offset = 0;
+    }
+
+    lidar_sample_t samples[LIDAR_SAMPLE_BUFFER_SIZE] = {0};
+    size_t copied = lidar_data_copy_samples(samples, (size_t)limit, (size_t)offset);
+
     httpd_resp_set_type(req, "application/json");
     cJSON *root = cJSON_CreateObject();
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    cJSON_AddStringToObject(root, "version", IDF_VER);
-    cJSON_AddNumberToObject(root, "cores", chip_info.cores);
-    const char *sys_info = cJSON_Print(root);
-    httpd_resp_sendstr(req, sys_info);
-    free((void *)sys_info);
+    cJSON *arr = cJSON_CreateArray();
+    if (root == NULL || arr == NULL) {
+        cJSON_Delete(root);
+        cJSON_Delete(arr);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json alloc failed");
+        return ESP_FAIL;
+    }
+
+    for (size_t i = 0; i < copied; i++) {
+        cJSON *sample_json = lidar_sample_to_json(&samples[i]);
+        if (sample_json != NULL) {
+            cJSON_AddItemToArray(arr, sample_json);
+        }
+    }
+    cJSON_AddItemToObject(root, "samples", arr);
+    cJSON_AddNumberToObject(root, "offset", offset);
+    cJSON_AddNumberToObject(root, "count", (int)copied);
+
+    const char *payload = cJSON_PrintUnformatted(root);
+    httpd_resp_sendstr(req, payload);
+    free((void *)payload);
     cJSON_Delete(root);
     return ESP_OK;
 }
 
-/* Simple handler for getting temperature data */
-static esp_err_t temperature_data_get_handler(httpd_req_t *req)
+static esp_err_t lidar_info_handler(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "application/json");
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "raw", esp_random() % 20);
-    const char *sys_info = cJSON_Print(root);
-    httpd_resp_sendstr(req, sys_info);
-    free((void *)sys_info);
-    cJSON_Delete(root);
+    static const char html[] =
+        "<!doctype html>\n"
+        "<html lang=\"en\">\n"
+        "<head>\n"
+        "  <meta charset=\"utf-8\">\n"
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+        "  <title>ESP32 Lidar</title>\n"
+        "  <style>\n"
+        "    body{font-family:Arial,Helvetica,sans-serif;background:#f7f7f7;margin:0;padding:24px;}\n"
+        "    h1{margin:0 0 12px;}\n"
+        "    .card{background:#fff;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.08);}\n"
+        "    button{margin:4px;padding:8px 12px;}\n"
+        "    pre{background:#111;color:#e6e6e6;padding:12px;border-radius:6px;overflow:auto;}\n"
+        "  </style>\n"
+        "</head>\n"
+        "<body>\n"
+        "  <div class=\"card\">\n"
+        "    <h1>ESP32 Lidar</h1>\n"
+        "    <div>\n"
+        "      <button onclick=\"post('/api/v1/lidar/start')\">Start</button>\n"
+        "      <button onclick=\"post('/api/v1/lidar/stop')\">Stop</button>\n"
+        "      <button onclick=\"get('/api/v1/lidar/status')\">Status</button>\n"
+        "      <button onclick=\"get('/api/v1/lidar/latest')\">Latest</button>\n"
+        "      <button onclick=\"get('/api/v1/lidar/samples?limit=8&offset=0')\">Samples</button>\n"
+        "    </div>\n"
+        "    <h3>Response</h3>\n"
+        "    <pre id=\"out\">---</pre>\n"
+        "  </div>\n"
+        "  <script>\n"
+        "    async function get(url){\n"
+        "      const res = await fetch(url);\n"
+        "      const text = await res.text();\n"
+        "      document.getElementById('out').textContent = text;\n"
+        "    }\n"
+        "    async function post(url){\n"
+        "      const res = await fetch(url,{method:'POST'});\n"
+        "      const text = await res.text();\n"
+        "      document.getElementById('out').textContent = text;\n"
+        "    }\n"
+        "  </script>\n"
+        "</body>\n"
+        "</html>\n";
+
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
-esp_err_t start_rest_server(const char *base_path)
+esp_err_t start_rest_server(void)
 {
-    REST_CHECK(base_path, "wrong base path", err);
-    rest_server_context_t *rest_context = calloc(1, sizeof(rest_server_context_t));
-    REST_CHECK(rest_context, "No memory for rest context", err);
-    strlcpy(rest_context->base_path, base_path, sizeof(rest_context->base_path));
-
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.uri_match_fn = httpd_uri_match_wildcard;
 
     ESP_LOGI(REST_TAG, "Starting HTTP Server");
-    REST_CHECK(httpd_start(&server, &config) == ESP_OK, "Start server failed", err_start);
+    if (httpd_start(&server, &config) != ESP_OK) {
+        ESP_LOGE(REST_TAG, "Start server failed");
+        return ESP_FAIL;
+    }
 
-    /* URI handler for fetching system info */
-    httpd_uri_t system_info_get_uri = {
-        .uri = "/api/v1/system/info",
+    httpd_uri_t root_get_uri = {
+        .uri = "/",
         .method = HTTP_GET,
-        .handler = system_info_get_handler,
-        .user_ctx = rest_context
+        .handler = lidar_info_handler,
+        .user_ctx = NULL
     };
-    httpd_register_uri_handler(server, &system_info_get_uri);
+    httpd_register_uri_handler(server, &root_get_uri);
 
-    /* URI handler for fetching temperature data */
-    httpd_uri_t temperature_data_get_uri = {
-        .uri = "/api/v1/temp/raw",
+    httpd_uri_t lidar_status_get_uri = {
+        .uri = "/api/v1/lidar/status",
         .method = HTTP_GET,
-        .handler = temperature_data_get_handler,
-        .user_ctx = rest_context
+        .handler = lidar_status_get_handler,
+        .user_ctx = NULL
     };
-    httpd_register_uri_handler(server, &temperature_data_get_uri);
+    httpd_register_uri_handler(server, &lidar_status_get_uri);
 
-    /* URI handler for light brightness control */
-    httpd_uri_t light_brightness_post_uri = {
-        .uri = "/api/v1/light/brightness",
+    httpd_uri_t lidar_start_post_uri = {
+        .uri = "/api/v1/lidar/start",
         .method = HTTP_POST,
-        .handler = light_brightness_post_handler,
-        .user_ctx = rest_context
+        .handler = lidar_start_post_handler,
+        .user_ctx = NULL
     };
-    httpd_register_uri_handler(server, &light_brightness_post_uri);
+    httpd_register_uri_handler(server, &lidar_start_post_uri);
 
-    /* URI handler for getting web server files */
-    httpd_uri_t common_get_uri = {
-        .uri = "/*",
-        .method = HTTP_GET,
-        .handler = rest_common_get_handler,
-        .user_ctx = rest_context
+    httpd_uri_t lidar_stop_post_uri = {
+        .uri = "/api/v1/lidar/stop",
+        .method = HTTP_POST,
+        .handler = lidar_stop_post_handler,
+        .user_ctx = NULL
     };
-    httpd_register_uri_handler(server, &common_get_uri);
+    httpd_register_uri_handler(server, &lidar_stop_post_uri);
+
+    httpd_uri_t lidar_latest_get_uri = {
+        .uri = "/api/v1/lidar/latest",
+        .method = HTTP_GET,
+        .handler = lidar_latest_get_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &lidar_latest_get_uri);
+
+    httpd_uri_t lidar_samples_get_uri = {
+        .uri = "/api/v1/lidar/samples",
+        .method = HTTP_GET,
+        .handler = lidar_samples_get_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &lidar_samples_get_uri);
 
     return ESP_OK;
-err_start:
-    free(rest_context);
-err:
-    return ESP_FAIL;
 }

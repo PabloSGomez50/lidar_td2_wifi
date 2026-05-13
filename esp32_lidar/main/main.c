@@ -16,8 +16,9 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
 #include "Wireless/Wireless.h"
+#include "lidar_data.h"
+#include "rest_server.h"
 #include "vl53l1x.h"
 #include "as5600.h"
 
@@ -49,16 +50,14 @@ static esp_err_t init_i2c_master(void)
     return ESP_OK;
 }
 
-
-void get_sensor_data() {
-    laser_data_t laser_data = get_data_laser(VL53L1X_ADDRESS);
-    ESP_LOGI(TAG, "Distance: %u mm, Signal Rate: %u Mcps, Ambient Light: %u Mcps, SPADs: %u",
-             laser_data.distance, laser_data.signal_rate, laser_data.ambient_light, laser_data.spad_num);
-    as5600_status_t as5600_status = get_as5600_status();
-    uint16_t angle = get_as5600_angle();
-    uint8_t agc = get_as5600_agc();
-    ESP_LOGI(TAG, "AS5600 - Angle: %u, AGC: %u, Status: [%c]",
-             angle, agc, as5600_status.valid ? 'X' : '-');
+static void probe_i2c_device(uint8_t address, const char *name)
+{
+    esp_err_t err = i2c_master_probe(bus_handle, address, pdMS_TO_TICKS(1000));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C device %s found at 0x%02X", name, address);
+    } else {
+        ESP_LOGW(TAG, "I2C device %s not found at 0x%02X (%s)", name, address, esp_err_to_name(err));
+    }
 }
 
 void app_main(void)
@@ -71,15 +70,18 @@ void app_main(void)
         return;
     }
 
+    probe_i2c_device((VL53L1X_ADDRESS >> 1), "VL53L1X");
+    probe_i2c_device(AS5600_ADDRESS, "AS5600");
+
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = (VL53L1X_ADDRESS >> 1),
         .scl_speed_hz = 100000,
     };
     
-    i2c_master_dev_handle_t dev_handle;
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
-    vl53l1x_set_i2c_device(dev_handle);
+    i2c_master_dev_handle_t vl53l1x_handle;
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &vl53l1x_handle));
+    vl53l1x_set_i2c_device(vl53l1x_handle);
     
     init_vl53l1x(VL53L1X_ADDRESS, short_distance);
     vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -94,13 +96,17 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &as5600_cfg, &as5600_handle));
     as5600_set_i2c_device(as5600_handle);
 
-    ESP_LOGW(TAG, "WiFi connection initiated, waiting for connection...");
+    ESP_LOGI(TAG, "WiFi connection initiated, waiting for connection...");
     connect_to_wifi();
-             
+
+    lidar_data_init();
+    if (start_rest_server() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start REST server");
+    }
+
     while(1) {
         ESP_LOGI(TAG, "Dando vueltas en el loop...");
 
-        get_sensor_data();
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

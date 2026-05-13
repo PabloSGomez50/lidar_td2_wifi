@@ -1,3 +1,6 @@
+#ifndef VL53L1X_H
+#define VL53L1X_H
+
 #include "VL53L1X_api.h"
 #include "Freertos/FreeRTOS.h"
 #include "Freertos/task.h"
@@ -20,9 +23,10 @@ typedef struct {
     uint16_t signal_rate;
     uint16_t ambient_light;
     uint16_t spad_num;
-
 } laser_data_t;
 
 
 void init_vl53l1x(uint16_t dev, uint16_t modo);
 laser_data_t get_data_laser(uint16_t dev);
+
+#endif /* VL53L1X_H */

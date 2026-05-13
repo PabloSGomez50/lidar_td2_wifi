@@ -10,6 +10,31 @@
 // }
 static i2c_master_dev_handle_t s_dev_handle = NULL;
 
+static esp_err_t as5600_read_reg(uint8_t reg, uint8_t *data, size_t len)
+{
+    if (s_dev_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        err = i2c_master_transmit_receive(
+            s_dev_handle,
+            &reg,
+            1,
+            data,
+            len,
+            pdMS_TO_TICKS(1000)
+        );
+        if (err == ESP_OK) {
+            return err;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+
+    return err;
+}
+
 void as5600_set_i2c_device(i2c_master_dev_handle_t handle)
 {
     s_dev_handle = handle;
@@ -18,24 +43,10 @@ void as5600_set_i2c_device(i2c_master_dev_handle_t handle)
 as5600_status_t get_as5600_status() {
     as5600_status_t status = {0};
     uint8_t buf;
+    uint8_t reg = AS5600_STATUS_REG;
     
     // i2c_write_blocking(i2c, AS5600_ADDRESS, (uint8_t[]){AS5600_STATUS_REG}, 1, true);
-    esp_err_t err = i2c_master_transmit(
-        s_dev_handle,
-        (uint8_t[]){AS5600_STATUS_REG},
-        1,
-        pdMS_TO_TICKS(1000)
-    );
-    if (err != ESP_OK) {
-        return status;
-    }
-    // i2c_read_blocking(i2c, AS5600_ADDRESS, &buf, 1, false);
-    err = i2c_master_receive(
-        s_dev_handle,
-        &buf,
-        1,
-        pdMS_TO_TICKS(1000)
-    );
+    esp_err_t err = as5600_read_reg(reg, &buf, 1);
     if (err != ESP_OK) {
         return status;
     }
@@ -50,23 +61,9 @@ as5600_status_t get_as5600_status() {
 
 uint16_t get_as5600_angle() {
     uint8_t buffer[2];
+    uint8_t reg = AS5600_ANGLE_REG_HIGH;
     // i2c_write_blocking(i2c, AS5600_ADDRESS, (uint8_t[]){AS5600_ANGLE_REG_HIGH}, 1, true);
-    esp_err_t err = i2c_master_transmit(
-        s_dev_handle,
-        (uint8_t[]){AS5600_ANGLE_REG_HIGH},
-        1,
-        pdMS_TO_TICKS(1000)
-    );
-    if (err != ESP_OK) {
-        return 0;
-    }
-    // i2c_read_blocking(i2c, AS5600_ADDRESS, buffer, 2, false);
-    err = i2c_master_receive(
-        s_dev_handle,
-        buffer,
-        2,
-        pdMS_TO_TICKS(1000)
-    );
+    esp_err_t err = as5600_read_reg(reg, buffer, 2);
     if (err != ESP_OK) {
         return 0;
     }
@@ -76,23 +73,9 @@ uint16_t get_as5600_angle() {
     
 uint8_t get_as5600_agc() {
     uint8_t agc;
+    uint8_t reg = AS5600_AGC_REG;
     // i2c_write_blocking(i2c, AS5600_ADDRESS, (uint8_t[]){AS5600_AGC_REG}, 1, true);
-    esp_err_t err = i2c_master_transmit(
-        s_dev_handle,
-        (uint8_t[]){AS5600_AGC_REG},
-        1,
-        pdMS_TO_TICKS(1000)
-    );
-    if (err != ESP_OK) {
-        return 0;
-    }
-    // i2c_read_blocking(i2c, AS5600_ADDRESS, &agc, 1, false);
-    err = i2c_master_receive(
-        s_dev_handle,
-        &agc,
-        1,
-        pdMS_TO_TICKS(1000)
-    );
+    esp_err_t err = as5600_read_reg(reg, &agc, 1);
     if (err != ESP_OK) {
         return 0;
     }

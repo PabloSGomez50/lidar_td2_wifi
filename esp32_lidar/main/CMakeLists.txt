@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "main.c"
+        "lidar_data.c"
+        "rest_server.c"
         "Wireless/Wireless.c"
        
     PRIV_REQUIRES
@@ -8,6 +10,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_i2c
         esp_event
+        esp_timer
         esp_wifi
         json
         nvs_flash

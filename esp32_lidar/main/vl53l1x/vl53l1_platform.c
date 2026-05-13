@@ -114,13 +114,13 @@ VL53L1_Error VL53L1_ReadMulti(uint16_t dev, uint16_t index, uint8_t *pdata, uint
     _I2CBuffer[0] = index >> 8;
     _I2CBuffer[1] = index & 0xFF;
 
-    status_int = _I2CWrite(dev, _I2CBuffer, 2);
-    if (status_int != 0) {
-        Status = VL53L1_ERROR_CONTROL_INTERFACE;
-        return Status;
-    }
-
-    status_int = _I2CRead(dev, pdata, count);
+    status_int = i2c_master_transmit_receive(
+        s_dev_handle,
+        _I2CBuffer,
+        2,
+        pdata,
+        count,
+        k_i2c_timeout_ticks);
     if (status_int != 0) {
         Status = VL53L1_ERROR_CONTROL_INTERFACE;
     }
@@ -191,13 +191,13 @@ VL53L1_Error VL53L1_RdByte(uint16_t dev, uint16_t index, uint8_t *data) {
     _I2CBuffer[0] = index >> 8;
     _I2CBuffer[1] = index & 0xFF;
 
-    status_int = _I2CWrite(dev, _I2CBuffer, 2);
-    if (status_int != 0) {
-        Status = VL53L1_ERROR_CONTROL_INTERFACE;
-        return Status;
-    }
-
-    status_int = _I2CRead(dev, data, 1);
+    status_int = i2c_master_transmit_receive(
+        s_dev_handle,
+        _I2CBuffer,
+        2,
+        data,
+        1,
+        k_i2c_timeout_ticks);
     if (status_int != 0) {
         Status = VL53L1_ERROR_CONTROL_INTERFACE;
     }
@@ -213,13 +213,13 @@ VL53L1_Error VL53L1_RdWord(uint16_t dev, uint16_t index, uint16_t *data) {
     _I2CBuffer[0] = index >> 8;
     _I2CBuffer[1] = index & 0xFF;
 
-    status_int = _I2CWrite(dev, _I2CBuffer, 2);
-    if (status_int != 0) {
-        Status = VL53L1_ERROR_CONTROL_INTERFACE;
-        return Status;
-    }
-
-    status_int = _I2CRead(dev, _I2CBuffer, 2);
+    status_int = i2c_master_transmit_receive(
+        s_dev_handle,
+        _I2CBuffer,
+        2,
+        _I2CBuffer,
+        2,
+        k_i2c_timeout_ticks);
     if (status_int != 0) {
         Status = VL53L1_ERROR_CONTROL_INTERFACE;
         return Status;
@@ -238,13 +238,13 @@ VL53L1_Error VL53L1_RdDWord(uint16_t dev, uint16_t index, uint32_t *data) {
     index_buf[0] = index >> 8;
     index_buf[1] = index & 0xFF;
 
-    status_int = _I2CWrite(dev, index_buf, 2);
-    if (status_int != 0) {
-        Status = VL53L1_ERROR_CONTROL_INTERFACE;
-        return Status;
-    }
-
-    status_int = _I2CRead(dev, _I2CBuffer, 4);
+    status_int = i2c_master_transmit_receive(
+        s_dev_handle,
+        index_buf,
+        2,
+        _I2CBuffer,
+        4,
+        k_i2c_timeout_ticks);
     if (status_int != 0) {
         Status = VL53L1_ERROR_CONTROL_INTERFACE;
         return Status;

@@ -7,17 +7,6 @@
 static const char *TAG = "wifi_station";
 static uint8_t wifi_retry_num = 0;
 
-// typedef enum {
-//     WIFI_UI_STATUS_CONNECTING = 0,
-//     WIFI_UI_STATUS_CONNECTED,
-//     WIFI_UI_STATUS_FAILED,
-//     WIFI_UI_STATUS_DISCONNECTED,
-// } wifi_ui_status_t;
-
-// static volatile wifi_ui_status_t s_last_wifi_ui_status = WIFI_UI_STATUS_DISCONNECTED;
-// static wifi_ui_status_t s_last_applied_wifi_ui_status = (wifi_ui_status_t)(-1);
-
-
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
 
@@ -88,7 +77,7 @@ void connect_to_wifi(void) {
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
@@ -111,3 +100,4 @@ void connect_to_wifi(void) {
     }
 
 }
+
